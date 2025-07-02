@@ -107,14 +107,12 @@ def receive_uwb_data():
 
     except Exception as e:
         db.session.rollback()
-        import traceback # Importa traceback aqui para garantir que esteja disponível
+        import traceback
         full_traceback = traceback.format_exc()
         print(f"Erro interno do servidor no receive_uwb_data: {e}\n{full_traceback}") # Imprime no log do Render
-        return jsonify({
-            "error": "Erro interno do servidor",
-            "details": str(e),
-            "traceback": full_traceback # Adiciona o traceback completo na resposta JSON
-        }), 500
+        
+        # RETORNA O TRACEBACK COMO TEXTO SIMPLES
+        return full_traceback, 500, {"Content-Type": "text/plain"}
 
 @uwb_bp.route("/uwb/data", methods=["GET"])
 def get_uwb_data():
