@@ -35,8 +35,12 @@ else:
 
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 db.init_app(app)
-with app.app_context():
-    db.create_all() # Isso cria todas as tabelas definidas nos modelos, incluindo AncoraUWB
+@app.cli.command('init-db')
+def init_db_command():
+    """Cria as tabelas do banco de dados."""
+    with app.app_context():
+        db.create_all()
+    print('Banco de dados inicializado.')
 
 @app.route('/', defaults={'path': ''})
 @app.route('/<path:path>')
