@@ -1,5 +1,5 @@
 from flask import Blueprint, jsonify, request
-from src.models.uwb_data import UWBData, db
+from src.models.uwb_data import UWBData, UWBDataProcessada, db
 from datetime import datetime
 
 uwb_bp = Blueprint('uwb', __name__)
@@ -7,7 +7,7 @@ uwb_bp = Blueprint('uwb', __name__)
 @uwb_bp.route('/uwb/data', methods=['POST'])
 def receive_uwb_data():
     """
-    Endpoint para receber dados UWB do ESP32
+    Endpoint para receber dados UWB do ESP32 com processamento automático
     Espera um JSON no formato:
     {
         "id": "4",
@@ -31,7 +31,7 @@ def receive_uwb_data():
         if not isinstance(range_values, list) or len(range_values) != 8:
             return jsonify({'error': 'Range deve ser uma lista com exatamente 8 valores'}), 400
         
-        # Criar novo registro UWB
+        # Criar novo registro UWB (dados originais)
         uwb_data = UWBData(
             tag_number=tag_id,
             da0=float(range_values[0]),
@@ -45,17 +45,39 @@ def receive_uwb_data():
             criado_em=datetime.utcnow()
         )
         
-        # Salvar no banco de dados
+        # Salvar dados originais no banco
         db.session.add(uwb_data)
+        
+        # ===== PROCESSAMENTO AUTOMÁTICO =====
+        # Criar registro processado automaticamente (+1 em cada valor)
+        uwb_data_processada = UWBDataProcessada(
+            tag_number=tag_id,
+            da0=(float(range_values[0]) if range_values[0] is not None else 0) + 1,
+            da1=(float(range_values[1]) if range_values[1] is not None else 0) + 1,
+            da2=(float(range_values[2]) if range_values[2] is not None else 0) + 1,
+            da3=(float(range_values[3]) if range_values[3] is not None else 0) + 1,
+            da4=(float(range_values[4]) if range_values[4] is not None else 0) + 1,
+            da5=(float(range_values[5]) if range_values[5] is not None else 0) + 1,
+            da6=(float(range_values[6]) if range_values[6] is not None else 0) + 1,
+            da7=(float(range_values[7]) if range_values[7] is not None else 0) + 1,
+            criado_em=datetime.utcnow()
+        )
+        
+        # Salvar dados processados no banco
+        db.session.add(uwb_data_processada)
+        
+        # Commit de ambas as operações
         db.session.commit()
         
         return jsonify({
             'success': True,
-            'message': 'Dados UWB salvos com sucesso',
-            'data': uwb_data.to_dict()
+            'message': 'Dados UWB salvos e processados automaticamente',
+            'data_original': uwb_data.to_dict(),
+            'data_processada': uwb_data_processada.to_dict()
         }), 201
         
     except ValueError as e:
+        db.session.rollback()
         return jsonify({'error': f'Erro de conversão de dados: {str(e)}'}), 400
     except Exception as e:
         db.session.rollback()
@@ -84,6 +106,17 @@ def get_uwb_data_by_tag(tag_number):
     except Exception as e:
         return jsonify({'error': f'Erro ao recuperar dados: {str(e)}'}), 500
 
+@uwb_bp.route('/uwb/data-processada', methods=['GET'])
+def get_uwb_data_processada():
+    """
+    Endpoint para recuperar dados processados
+    """
+    try:
+        uwb_records = UWBDataProcessada.query.order_by(UWBDataProcessada.criado_em.desc()).limit(50).all()
+        return jsonify([record.to_dict() for record in uwb_records])
+    except Exception as e:
+        return jsonify({'error': f'Erro ao recuperar dados processados: {str(e)}'}), 500
+
 @uwb_bp.route('/uwb/health', methods=['GET'])
 def health_check():
     """
@@ -91,14 +124,17 @@ def health_check():
     """
     return jsonify({
         'status': 'OK',
-        'message': 'API UWB está funcionando',
+        'message': 'API UWB está funcionando com processamento automático',
         'timestamp': datetime.utcnow().isoformat()
     })
 
-from src.models.uwb_data import UWBData, UWBDataProcessada, db
-
+# Manter o endpoint manual para compatibilidade (opcional)
 @uwb_bp.route('/uwb/processar', methods=['POST'])
 def processar_uwb():
+    """
+    Endpoint manual para processamento (mantido para compatibilidade)
+    NOTA: Com processamento automático, este endpoint pode não ser mais necessário
+    """
     try:
         dados = UWBData.query.all()
 
@@ -117,7 +153,8 @@ def processar_uwb():
             db.session.add(nova_linha)
 
         db.session.commit()
-        return jsonify({'status': 'processamento concluído'}), 200
+        return jsonify({'status': 'processamento manual concluído'}), 200
 
     except Exception as e:
         return jsonify({'error': str(e)}), 500
+
