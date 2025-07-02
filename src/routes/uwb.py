@@ -95,3 +95,29 @@ def health_check():
         'timestamp': datetime.utcnow().isoformat()
     })
 
+from src.models.uwb_data import UWBData, UWBDataProcessada, db
+
+@uwb_bp.route('/uwb/processar', methods=['POST'])
+def processar_uwb():
+    try:
+        dados = UWBData.query.all()
+
+        for dado in dados:
+            nova_linha = UWBDataProcessada(
+                tag_number=dado.tag_number,
+                da0=(dado.da0 or 0) + 1,
+                da1=(dado.da1 or 0) + 1,
+                da2=(dado.da2 or 0) + 1,
+                da3=(dado.da3 or 0) + 1,
+                da4=(dado.da4 or 0) + 1,
+                da5=(dado.da5 or 0) + 1,
+                da6=(dado.da6 or 0) + 1,
+                da7=(dado.da7 or 0) + 1,
+            )
+            db.session.add(nova_linha)
+
+        db.session.commit()
+        return jsonify({'status': 'processamento concluído'}), 200
+
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
