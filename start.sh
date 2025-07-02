@@ -6,6 +6,9 @@ echo "Iniciando aplicação UWB API..."
 # Adiciona o diretório 'src' ao PYTHONPATH para que os módulos sejam encontrados
 export PYTHONPATH=$PYTHONPATH:$(pwd)/src
 
+# Define a variável FLASK_APP para que o Flask CLI encontre sua aplicação
+export FLASK_APP=src.main:app
+
 # Executa o comando para inicializar/atualizar o banco de dados usando python -m flask
 python -m flask init-db
 
