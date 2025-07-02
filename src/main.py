@@ -1,3 +1,4 @@
+print("Iniciando a aplicação Flask...")
 import os
 import sys
 # DON'T CHANGE THIS !!!
@@ -7,7 +8,7 @@ from flask import Flask, send_from_directory
 from flask_cors import CORS
 from src.models.user import db
 from src.models.uwb_data import UWBData
-from src.models.ancora_uwb import AncoraUWB
+from src.models.ancora_uwb import AncoraUWB # Importação adicionada
 from src.routes.user import user_bp
 from src.routes.uwb import uwb_bp
 
@@ -35,7 +36,7 @@ else:
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 db.init_app(app)
 with app.app_context():
-    db.create_all()
+    db.create_all() # Isso cria todas as tabelas definidas nos modelos, incluindo AncoraUWB
 
 @app.route('/', defaults={'path': ''})
 @app.route('/<path:path>')
