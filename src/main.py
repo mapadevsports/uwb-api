@@ -39,9 +39,10 @@ db.init_app(app)
 def init_db_command():
     """Cria as tabelas do banco de dados."""
     with app.app_context():
+        # APAGA E RECria a tabela distancias_uwb
+        db.drop_all()
         db.create_all()
-    print('Banco de dados inicializado.')
-
+    print('Banco de dados inicializado (tabelas recriadas).')
 @app.route('/', defaults={'path': ''})
 @app.route('/<path:path>')
 def serve(path):
