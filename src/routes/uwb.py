@@ -154,8 +154,14 @@ def receive_uwb_data():
         return jsonify({'error': f'Erro de conversão de dados: {str(e)}'}), 400
     except Exception as e:
         db.session.rollback()
-        return jsonify({'error': f'Erro interno do servidor: {str(e)}'}), 500
-
+        import traceback # Importa traceback aqui para garantir que esteja disponível
+        full_traceback = traceback.format_exc()
+        print(f"Erro interno do servidor no receive_uwb_data: {e}\n{full_traceback}") # Imprime no log do Render
+        return jsonify({
+            'error': 'Erro interno do servidor',
+            'details': str(e),
+            'traceback': full_traceback # Adiciona o traceback completo na resposta JSON
+        }), 500
 @uwb_bp.route('/uwb/data', methods=['GET'])
 def get_uwb_data():
     """
