@@ -15,11 +15,12 @@ class TrilateracaoUWB:
     """
     
     def __init__(self):
-        # Coordenadas das âncoras conforme especificação
-        self.ancoras = {
-            'da0': (0, 0),      # Âncora 0: origem
-            'da1': (114, 0),    # Âncora 1: 114cm no eixo X
-            'da2': (0, 114),    # Âncora 2: 114cm no eixo Y
+        # Coordenadas das âncoras serão definidas dinamicamente com base em kx e ky
+        # Valores padrão caso kx e ky não estejam disponíveis
+        self.ancoras_padrao = {
+            'da0': (0, 0),      # Âncora 0: sempre origem (0,0)
+            'da1': (114, 0),    # Âncora 1: padrão 114cm no eixo X (será substituído por kx)
+            'da2': (0, 114),    # Âncora 2: padrão 114cm no eixo Y (será substituído por ky)
             'da3': (114, 114),  # Âncora 3: opcional
             'da4': (57, 57),    # Âncora 4: opcional
             'da5': (57, 0),     # Âncora 5: opcional
@@ -27,40 +28,119 @@ class TrilateracaoUWB:
             'da7': (114, 57)    # Âncora 7: opcional
         }
     
-    def calcular_trilateracao_basica(self, da0: float, da1: float, da2: float) -> tuple:
-        """Trilateração básica com 3 âncoras principais"""
+    def obter_coordenadas_ancoras(self, kx=None, ky=None):
+        """
+        Retorna as coordenadas das âncoras baseadas nos valores kx e ky do relatório
+        """
+        ancoras = self.ancoras_padrao.copy()
+        
+        if kx is not None and ky is not None:
+            try:
+                kx_float = float(kx)
+                ky_float = float(ky)
+                
+                # Definir coordenadas conforme especificação do usuário:
+                # Âncora 0: sempre (0, 0)
+                # Âncora 1: (kx, 0) - kx do relatório no eixo X, 0 no eixo Y
+                # Âncora 2: (0, ky) - 0 no eixo X, ky do relatório no eixo Y
+                ancoras['da0'] = (0, 0)
+                ancoras['da1'] = (kx_float, 0)
+                ancoras['da2'] = (0, ky_float)
+                
+                # Atualizar outras âncoras proporcionalmente se necessário
+                ancoras['da3'] = (kx_float, ky_float)
+                ancoras['da4'] = (kx_float/2, ky_float/2)
+                ancoras['da5'] = (kx_float/2, 0)
+                ancoras['da6'] = (0, ky_float/2)
+                ancoras['da7'] = (kx_float, ky_float/2)
+                
+                logging.info(f"Coordenadas das âncoras atualizadas com kx={kx_float}, ky={ky_float}")
+                logging.info(f"Âncora 0: {ancoras['da0']}, Âncora 1: {ancoras['da1']}, Âncora 2: {ancoras['da2']}")
+                
+            except (ValueError, TypeError) as e:
+                logging.warning(f"Erro ao converter kx={kx} ou ky={ky} para float: {e}. Usando valores padrão.")
+        else:
+            logging.info("kx ou ky não fornecidos, usando coordenadas padrão das âncoras")
+        
+        return ancoras
+    
+    def calcular_trilateracao_basica(self, da0: float, da1: float, da2: float, kx=None, ky=None) -> tuple:
+        """Trilateração básica com 3 âncoras principais usando coordenadas dinâmicas"""
         try:
             # Verificar distâncias válidas
             if da0 <= 0 or da1 <= 0 or da2 <= 0:
                 return 57.0, 57.0
             
-            # Cálculo analítico
-            A = 2 * 114  # 2 * (x1 - x0)
-            B = 2 * 114  # 2 * (y2 - y0)
-            C = da0**2 - da1**2 + 114**2  # r0² - r1² + x1²
-            D = da0**2 - da2**2 + 114**2  # r0² - r2² + y2²
+            # Obter coordenadas das âncoras
+            ancoras = self.obter_coordenadas_ancoras(kx, ky)
             
-            x = C / A if A != 0 else 57.0
-            y = D / B if B != 0 else 57.0
+            # Coordenadas das âncoras
+            x0, y0 = ancoras['da0']  # (0, 0)
+            x1, y1 = ancoras['da1']  # (kx, 0)
+            x2, y2 = ancoras['da2']  # (0, ky)
             
+            # Raios
+            r0, r1, r2 = da0, da1, da2
+            
+            # Cálculo analítico da trilateração
+            # Sistema de equações:
+            # (x - x0)² + (y - y0)² = r0²
+            # (x - x1)² + (y - y1)² = r1²
+            # (x - x2)² + (y - y2)² = r2²
+            
+            # Expandindo e reorganizando:
+            # x² - 2*x0*x + x0² + y² - 2*y0*y + y0² = r0²
+            # x² - 2*x1*x + x1² + y² - 2*y1*y + y1² = r1²
+            # x² - 2*x2*x + x2² + y² - 2*y2*y + y2² = r2²
+            
+            # Subtraindo a primeira equação das outras duas:
+            # 2*(x0-x1)*x + 2*(y0-y1)*y = r0² - r1² + x1² - x0² + y1² - y0²
+            # 2*(x0-x2)*x + 2*(y0-y2)*y = r0² - r2² + x2² - x0² + y2² - y0²
+            
+            A = 2 * (x1 - x0)  # 2 * (kx - 0) = 2 * kx
+            B = 2 * (y1 - y0)  # 2 * (0 - 0) = 0
+            C = r0**2 - r1**2 + x1**2 - x0**2 + y1**2 - y0**2  # r0² - r1² + kx²
+            
+            D = 2 * (x2 - x0)  # 2 * (0 - 0) = 0
+            E = 2 * (y2 - y0)  # 2 * (ky - 0) = 2 * ky
+            F = r0**2 - r2**2 + x2**2 - x0**2 + y2**2 - y0**2  # r0² - r2² + ky²
+            
+            # Resolver o sistema:
+            # A*x + B*y = C  =>  2*kx*x + 0*y = r0² - r1² + kx²
+            # D*x + E*y = F  =>  0*x + 2*ky*y = r0² - r2² + ky²
+            
+            if A != 0:  # Se kx != 0
+                x = C / A  # x = (r0² - r1² + kx²) / (2*kx)
+            else:
+                x = 57.0  # Valor padrão se kx = 0
+            
+            if E != 0:  # Se ky != 0
+                y = F / E  # y = (r0² - r2² + ky²) / (2*ky)
+            else:
+                y = 57.0  # Valor padrão se ky = 0
+            
+            logging.info(f"Trilateração básica: x={x:.2f}, y={y:.2f} usando kx={kx}, ky={ky}")
             return x, y
             
         except Exception as e:
             logging.warning(f"Erro na trilateração básica: {e}")
             return 57.0, 57.0
     
-    def calcular_minimos_quadrados(self, distancias: dict) -> tuple:
-        """Mínimos quadrados com todas as âncoras disponíveis"""
+    def calcular_minimos_quadrados(self, distancias: dict, kx=None, ky=None) -> tuple:
+        """Mínimos quadrados com todas as âncoras disponíveis usando coordenadas dinâmicas"""
         try:
+            # Obter coordenadas das âncoras
+            ancoras = self.obter_coordenadas_ancoras(kx, ky)
+            
             # Filtrar âncoras válidas
             ancoras_validas = []
             distancias_validas = []
             
             for ancora_id, distancia in distancias.items():
-                if (ancora_id in self.ancoras and 
+                if (ancora_id in ancoras and 
                     distancia is not None and 
                     distancia > 0):
-                    ancoras_validas.append(self.ancoras[ancora_id])
+                    ancoras_validas.append(ancoras[ancora_id])
                     distancias_validas.append(distancia)
             
             if len(ancoras_validas) < 3:
@@ -68,7 +148,7 @@ class TrilateracaoUWB:
                 da0 = distancias.get('da0', 50)
                 da1 = distancias.get('da1', 50)
                 da2 = distancias.get('da2', 50)
-                return self.calcular_trilateracao_basica(da0, da1, da2)
+                return self.calcular_trilateracao_basica(da0, da1, da2, kx, ky)
             
             # Método matricial dos mínimos quadrados
             n = len(ancoras_validas)
@@ -88,6 +168,8 @@ class TrilateracaoUWB:
             
             # Resolver usando pseudo-inversa
             pos = np.linalg.pinv(A) @ b
+            
+            logging.info(f"Mínimos quadrados: x={pos[0]:.2f}, y={pos[1]:.2f} usando kx={kx}, ky={ky}")
             return float(pos[0]), float(pos[1])
                 
         except Exception as e:
@@ -96,13 +178,17 @@ class TrilateracaoUWB:
             da0 = distancias.get('da0', 50)
             da1 = distancias.get('da1', 50)
             da2 = distancias.get('da2', 50)
-            return self.calcular_trilateracao_basica(da0, da1, da2)
+            return self.calcular_trilateracao_basica(da0, da1, da2, kx, ky)
     
-    def aplicar_correcao(self, x: float, y: float) -> tuple:
-        """Aplica correções e limites físicos"""
-        # Limitar à área física (0-114cm)
-        x_corrigido = max(2.0, min(112.0, x))  # Margem de 2cm
-        y_corrigido = max(2.0, min(112.0, y))
+    def aplicar_correcao(self, x: float, y: float, kx=None, ky=None) -> tuple:
+        """Aplica correções e limites físicos baseados nas dimensões reais"""
+        # Usar dimensões baseadas em kx e ky se disponíveis
+        max_x = float(kx) if kx is not None else 114.0
+        max_y = float(ky) if ky is not None else 114.0
+        
+        # Limitar à área física com margem de 2cm
+        x_corrigido = max(2.0, min(max_x - 2.0, x))
+        y_corrigido = max(2.0, min(max_y - 2.0, y))
         
         return x_corrigido, y_corrigido
     
@@ -110,48 +196,31 @@ class TrilateracaoUWB:
                            da4=None, da5=None, da6=None, da7=None, kx=None, ky=None) -> tuple:
         """
         Processa distâncias e retorna posição X,Y final
-        Se kx e ky forem fornecidos, usa esses valores em vez de da1 e da2
+        Usa kx e ky para definir as coordenadas das âncoras 1 e 2
         """
         # Preparar dicionário de distâncias válidas
         distancias = {}
         
-        # Se Kx e Ky foram fornecidos, usar esses valores
-        if kx is not None and ky is not None:
-            try:
-                kx_float = float(kx)
-                ky_float = float(ky)
-                # Usar Kx como da1 e Ky como da2
-                distancias['da0'] = da0 if da0 is not None and da0 > 0 else 50
-                distancias['da1'] = kx_float
-                distancias['da2'] = ky_float
-                logging.info(f"Usando Kx={kx_float} como da1 e Ky={ky_float} como da2 para trilateração")
-            except (ValueError, TypeError):
-                logging.warning(f"Erro ao converter Kx={kx} ou Ky={ky} para float, usando valores originais")
-                # Fallback para valores originais
-                for i, valor in enumerate([da0, da1, da2, da3, da4, da5, da6, da7]):
-                    if valor is not None and valor > 0:
-                        distancias[f'da{i}'] = valor
-        else:
-            # Usar valores originais se Kx/Ky não fornecidos
-            for i, valor in enumerate([da0, da1, da2, da3, da4, da5, da6, da7]):
-                if valor is not None and valor > 0:
-                    distancias[f'da{i}'] = valor
+        # Usar valores das distâncias medidas (da0, da1, da2, etc.)
+        for i, valor in enumerate([da0, da1, da2, da3, da4, da5, da6, da7]):
+            if valor is not None and valor > 0:
+                distancias[f'da{i}'] = valor
         
         # Contar âncoras válidas
         num_ancoras = len(distancias)
         
         if num_ancoras >= 4:
             # Usar mínimos quadrados para melhor precisão
-            x, y = self.calcular_minimos_quadrados(distancias)
+            x, y = self.calcular_minimos_quadrados(distancias, kx, ky)
         else:
             # Usar trilateração básica
             da0_val = distancias.get('da0', 50)
             da1_val = distancias.get('da1', 50)
             da2_val = distancias.get('da2', 50)
-            x, y = self.calcular_trilateracao_basica(da0_val, da1_val, da2_val)
+            x, y = self.calcular_trilateracao_basica(da0_val, da1_val, da2_val, kx, ky)
         
         # Aplicar correções finais
-        x_final, y_final = self.aplicar_correcao(x, y)
+        x_final, y_final = self.aplicar_correcao(x, y, kx, ky)
         
         return round(x_final, 2), round(y_final, 2)
 
@@ -236,8 +305,9 @@ def receive_uwb_data():
             
             if kx_relatorio and ky_relatorio:
                 logging.info(f"Usando Kx={kx_relatorio} e Ky={ky_relatorio} do relatório {relatorio_ativo.relatorio_number}")
+                logging.info(f"Coordenadas das âncoras: Âncora 0=(0,0), Âncora 1=({kx_relatorio},0), Âncora 2=(0,{ky_relatorio})")
             else:
-                logging.info("Kx/Ky não disponíveis no relatório, usando valores originais da leitura")
+                logging.warning("Kx/Ky não disponíveis no relatório, usando valores padrão")
             
             # Calcular posição X,Y usando trilateração com Kx/Ky do relatório
             x, y = trilateracao.processar_distancias(
@@ -273,7 +343,12 @@ def receive_uwb_data():
                     'x': x,
                     'y': y,
                     'unidade': 'cm',
-                    'algoritmo': 'trilateracao_minimos_quadrados'
+                    'algoritmo': 'trilateracao_minimos_quadrados',
+                    'coordenadas_ancoras': {
+                        'ancora_0': '(0, 0)',
+                        'ancora_1': f'({kx_relatorio}, 0)' if kx_relatorio else '(114, 0)',
+                        'ancora_2': f'(0, {ky_relatorio})' if ky_relatorio else '(0, 114)'
+                    }
                 },
                 'relatorio_id': relatorio_ativo.relatorio_number,
                 'relatorio_ativo': True
@@ -344,25 +419,22 @@ def health_check():
     """Health check com informações do sistema"""
     return jsonify({
         'status': 'OK',
-        'message': 'API UWB com trilateração automática ativa',
+        'message': 'API UWB com trilateração automática ativa (coordenadas dinâmicas)',
         'features': [
             'trilateracao_automatica',
             'minimos_quadrados', 
             'correcao_posicao',
             'dados_originais',
-            'posicoes_calculadas'
+            'posicoes_calculadas',
+            'coordenadas_dinamicas_kx_ky'
         ],
         'ancoras_configuradas': {
-            'da0': '(0, 0)',
-            'da1': '(114, 0)',
-            'da2': '(0, 114)',
-            'da3': '(114, 114) - opcional',
-            'da4': '(57, 57) - opcional',
-            'da5': '(57, 0) - opcional',
-            'da6': '(0, 57) - opcional',
-            'da7': '(114, 57) - opcional'
+            'da0': 'sempre (0, 0)',
+            'da1': '(kx do relatório, 0)',
+            'da2': '(0, ky do relatório)',
+            'da3_a_da7': 'proporcionais a kx e ky'
         },
-        'area_trabalho': '114x114 cm',
+        'area_trabalho': 'dinâmica baseada em kx x ky cm',
         'timestamp': datetime.utcnow().isoformat()
     })
 
@@ -381,15 +453,28 @@ def teste_trilateracao():
             if key in data and data[key] is not None:
                 distancias[key] = float(data[key])
         
+        # Extrair kx e ky se fornecidos
+        kx = data.get('kx')
+        ky = data.get('ky')
+        
         # Calcular posição
-        x, y = trilateracao.processar_distancias(**distancias)
+        x, y = trilateracao.processar_distancias(kx=kx, ky=ky, **distancias)
         
         return jsonify({
-            'entrada': distancias,
+            'entrada': {
+                'distancias': distancias,
+                'kx': kx,
+                'ky': ky
+            },
             'resultado': {
                 'x': x,
                 'y': y,
                 'unidade': 'cm'
+            },
+            'coordenadas_ancoras_utilizadas': {
+                'ancora_0': '(0, 0)',
+                'ancora_1': f'({kx}, 0)' if kx else '(114, 0)',
+                'ancora_2': f'(0, {ky})' if ky else '(0, 114)'
             },
             'metadados': {
                 'ancoras_utilizadas': len(distancias),
@@ -403,8 +488,17 @@ def teste_trilateracao():
 # Manter endpoint manual para compatibilidade (opcional)
 @uwb_bp.route('/uwb/reprocessar', methods=['POST'])
 def reprocessar_dados():
-    """Reprocessar dados existentes com trilateração"""
+    """Reprocessar dados existentes com trilateração usando kx e ky atuais"""
     try:
+        # Buscar relatório ativo para obter kx e ky
+        relatorio_ativo = Relatorio.query.filter(
+            Relatorio.inicio_do_relatorio.isnot(None),
+            Relatorio.fim_do_relatorio.is_(None)
+        ).first()
+        
+        kx_relatorio = relatorio_ativo.kx if relatorio_ativo and relatorio_ativo.kx else None
+        ky_relatorio = relatorio_ativo.ky if relatorio_ativo and relatorio_ativo.ky else None
+        
         # Buscar dados não processados
         dados_nao_processados = db.session.query(UWBData).filter(
             ~db.session.query(UWBDataProcessada).filter(
@@ -415,10 +509,11 @@ def reprocessar_dados():
         
         processados = 0
         for dado in dados_nao_processados:
-            # Calcular posição usando trilateração
+            # Calcular posição usando trilateração com kx e ky
             x, y = trilateracao.processar_distancias(
                 da0=dado.da0, da1=dado.da1, da2=dado.da2, da3=dado.da3,
-                da4=dado.da4, da5=dado.da5, da6=dado.da6, da7=dado.da7
+                da4=dado.da4, da5=dado.da5, da6=dado.da6, da7=dado.da7,
+                kx=kx_relatorio, ky=ky_relatorio
             )
             
             # Criar registro processado
@@ -436,10 +531,16 @@ def reprocessar_dados():
         return jsonify({
             'status': 'reprocessamento concluído',
             'registros_processados': processados,
-            'algoritmo': 'trilateracao_minimos_quadrados'
+            'algoritmo': 'trilateracao_minimos_quadrados',
+            'kx_utilizado': kx_relatorio,
+            'ky_utilizado': ky_relatorio,
+            'coordenadas_ancoras': {
+                'ancora_0': '(0, 0)',
+                'ancora_1': f'({kx_relatorio}, 0)' if kx_relatorio else '(114, 0)',
+                'ancora_2': f'(0, {ky_relatorio})' if ky_relatorio else '(0, 114)'
+            }
         }), 200
 
     except Exception as e:
         db.session.rollback()
         return jsonify({'error': str(e)}), 500
-
