@@ -3,7 +3,7 @@ from src.models.relatorio import Relatorio
 from src.models.user import db
 import json
 
-relatorio_bp = Blueprint("relatorio", __name__)
+relatorio_kodular_bp = Blueprint("relatorio_kodular", __name__)
 
 @relatorio_bp.route("/iniciar_kodular", methods=["POST"])
 def iniciar_kodular():
