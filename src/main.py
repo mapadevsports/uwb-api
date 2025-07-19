@@ -12,6 +12,8 @@ from src.routes.user import user_bp
 from src.routes.uwb import uwb_bp
 from src.routes.relatorio import relatorio_bp
 from src.routes.migration import migration_bp
+from src.routes.adicional_api import relatorio_kodular_bp
+
 
 app = Flask(__name__, static_folder=os.path.join(os.path.dirname(__file__), 'static'))
 app.config['SECRET_KEY'] = 'asdf#FGSgvasgf$5$WGT'
@@ -23,6 +25,8 @@ app.register_blueprint(user_bp, url_prefix='/api')
 app.register_blueprint(uwb_bp, url_prefix='/api')
 app.register_blueprint(relatorio_bp, url_prefix='/api')
 app.register_blueprint(migration_bp, url_prefix='/api')
+app.register_blueprint(relatorio_kodular_bp, url_prefix="/api")
+
 
 # Configuração do banco de dados
 # Para desenvolvimento local, use SQLite
