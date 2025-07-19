@@ -5,10 +5,9 @@ import json
 
 relatorio_kodular_bp = Blueprint("relatorio_kodular", __name__)
 
-@relatorio_bp.route("/iniciar_kodular", methods=["POST"])
+@relatorio_kodular_bp.route("/iniciar_kodular", methods=["POST"])
 def iniciar_kodular():
     try:
-        # Lê mesmo que o content-type esteja incorreto
         raw_data = request.get_data(as_text=True)
         data = json.loads(raw_data)
 
