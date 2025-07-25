@@ -13,6 +13,8 @@ from src.routes.uwb import uwb_bp
 from src.routes.relatorio import relatorio_bp
 from src.routes.migration import migration_bp
 from src.routes.adicional_api import relatorio_kodular_bp
+from src.routes.adicional_api_uwb import adicional_uwb_bp
+
 
 
 app = Flask(__name__, static_folder=os.path.join(os.path.dirname(__file__), 'static'))
@@ -26,6 +28,7 @@ app.register_blueprint(uwb_bp, url_prefix='/api')
 app.register_blueprint(relatorio_bp, url_prefix='/api')
 app.register_blueprint(migration_bp, url_prefix='/api')
 app.register_blueprint(relatorio_kodular_bp, url_prefix="/api")
+app.register_blueprint(adicional_uwb_bp, url_prefix="/api")
 
 
 # Configuração do banco de dados
