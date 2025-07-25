@@ -1,0 +1,265 @@
+#define UWB_INDEX 0
+#define ANCHOR
+#define UWB_TAG_COUNT 64
+
+#include <Arduino.h>
+#include <BluetoothSerial.h>
+#include <ArduinoJson.h>
+#include <vector>
+
+const String BLUETOOTH_NAME = "ESP32_UWB_A0";
+const unsigned long SEND_DELAY = 20;
+const int TAG_BUFFER_SIZE = 20;
+const float CALIBRACAO_VARIACAO_MAX = 1500.0;
+const int TAG_KX_ID = 1;
+const int TAG_KY_ID = 2;
+
+const String CMD_INICIAR_CALIBRACAO   = "iniciar_calibracao";
+const String CMD_INICIAR_RELATORIO    = "iniciar_relatorio";
+const String CMD_FINALIZAR_RELATORIO  = "finalizar_relatorio";
+const String CMD_LER                  = "ler";
+
+#define SERIAL_LOG Serial
+#define SERIAL_AT mySerial2
+HardwareSerial SERIAL_AT(2);
+
+#define RESET 4
+#define IO_RXD2 16
+#define IO_TXD2 17
+
+BluetoothSerial SerialBT;
+
+bool iniciarCalibracao = false;
+bool relatorioAtivo = false;
+bool KxCalculated = false;
+bool KyCalculated = false;
+bool jsonKxKyEnviado = false;
+
+float tag1Readings[TAG_BUFFER_SIZE];
+int tag1Index = 0;
+float Kx = 0.0;
+
+float tag2Readings[TAG_BUFFER_SIZE];
+int tag2Index = 0;
+float Ky = 0.0;
+
+std::vector<String> tabela1;
+std::vector<String> tabela2;
+std::vector<String>* tabelaAtual = &tabela1;
+std::vector<String>* tabelaEnvio = nullptr;
+bool enviando = false;
+unsigned long lastSendIndex = 0;
+int envioIndex = 0;
+
+String uwbResponseBuffer = "";
+
+void setup() {
+  pinMode(RESET, OUTPUT); digitalWrite(RESET, HIGH);
+  SERIAL_LOG.begin(115200);
+  SERIAL_AT.begin(115200, SERIAL_8N1, IO_RXD2, IO_TXD2);
+  SerialBT.begin(BLUETOOTH_NAME);
+  SERIAL_LOG.println("🔵 Bluetooth iniciado como '" + BLUETOOTH_NAME + "'");
+  SERIAL_LOG.println("Aguardando comando: " + CMD_INICIAR_CALIBRACAO);
+
+  for (int i = 0; i < TAG_BUFFER_SIZE; i++) {
+    tag1Readings[i] = 0.0;
+    tag2Readings[i] = 0.0;
+  }
+
+  sendData("AT?", 2000, 1);
+  sendData("AT+RESTORE", 5000, 1);
+  sendData(config_cmd(), 2000, 1);
+  sendData(cap_cmd(), 2000, 1);
+  sendData("AT+SETRPT=1", 2000, 1);
+  sendData("AT+SAVE", 2000, 1);
+  sendData("AT+RESTART", 2000, 1);
+  delay(5000);
+}
+
+void loop() {
+  static bool conectado = false;
+  if (SerialBT.hasClient()) {
+    if (!conectado) {
+      conectado = true;
+      Serial.println("✅ Bluetooth CONECTADO");
+    }
+  } else {
+    if (conectado) {
+      conectado = false;
+      Serial.println("⚠️ Bluetooth DESCONECTADO");
+    }
+  }
+
+  if (SerialBT.available()) {
+    String comando = SerialBT.readStringUntil('\n');
+    comando.trim();
+
+    if (comando == CMD_INICIAR_CALIBRACAO) {
+      iniciarCalibracao = true;
+      KxCalculated = false;
+      KyCalculated = false;
+      jsonKxKyEnviado = false;
+      tag1Index = tag2Index = 0;
+      SERIAL_LOG.println("⏳ Calibracao iniciada.");
+    } else if (comando == CMD_INICIAR_RELATORIO) {
+      Serial.println("📲 Comando recebido: iniciar_relatorio");
+      if (KxCalculated && KyCalculated) {
+        relatorioAtivo = true;
+        SerialBT.println("✅ RELATÓRIO INICIADO");
+      } else {
+        SerialBT.println("⚠️ Kx/Ky ainda não calculados.");
+      }
+    } else if (comando == CMD_FINALIZAR_RELATORIO) {
+      relatorioAtivo = false;
+      SerialBT.println("🛑 RELATÓRIO FINALIZADO");
+    } else if (comando == CMD_LER) {
+      if (!enviando && tabelaAtual->size() > 0) {
+        tabelaEnvio = tabelaAtual;
+        tabelaAtual = (tabelaAtual == &tabela1) ? &tabela2 : &tabela1;
+        tabelaAtual->clear();
+        envioIndex = 0;
+        enviando = true;
+        SERIAL_LOG.println("📤 Iniciando envio em lote...");
+      }
+    }
+  }
+
+  while (SERIAL_LOG.available() > 0) {
+    SERIAL_AT.write(SERIAL_LOG.read());
+    yield();
+  }
+
+  while (SERIAL_AT.available() > 0) {
+    char c = SERIAL_AT.read();
+    if (c == '\r') continue;
+    if (c == '\n') {
+      if (uwbResponseBuffer.indexOf("range:") != -1) {
+        String json = convertToJSON(uwbResponseBuffer);
+        processarDadosUWB(json);
+      }
+      uwbResponseBuffer = "";
+    } else {
+      uwbResponseBuffer += c;
+    }
+  }
+
+  if (enviando && tabelaEnvio && envioIndex < tabelaEnvio->size()) {
+    if (millis() - lastSendIndex > SEND_DELAY) {
+      String json = tabelaEnvio->at(envioIndex);
+      Serial.println(json);
+      SerialBT.println(json);
+      envioIndex++;
+      lastSendIndex = millis();
+    }
+  }
+
+  if (enviando && envioIndex >= tabelaEnvio->size()) {
+    SERIAL_LOG.println("✅ Envio concluído.");
+    tabelaEnvio->clear();
+    tabelaEnvio = nullptr;
+    envioIndex = 0;
+    enviando = false;
+  }
+
+  delay(5);
+}
+
+void processarDadosUWB(String jsonData) {
+  if (!iniciarCalibracao) return;
+
+  DynamicJsonDocument doc(1024);
+  if (deserializeJson(doc, jsonData)) return;
+  int tagId = doc["id"];
+  JsonArray rangeArray = doc["range"];
+  if (rangeArray.size() == 0) return;
+  float range = rangeArray[0];
+
+  if (tagId == TAG_KX_ID) processTag1(range);
+  else if (tagId == TAG_KY_ID) processTag2(range);
+  else {
+    if (relatorioAtivo && KxCalculated && KyCalculated) {
+      tabelaAtual->push_back(jsonData);
+    }
+  }
+}
+
+void processTag1(float range) {
+  if (KxCalculated) return;
+  tag1Readings[tag1Index++] = range;
+  if (tag1Index >= TAG_BUFFER_SIZE) {
+    float minVal = *std::min_element(tag1Readings, tag1Readings + TAG_BUFFER_SIZE);
+    float maxVal = *std::max_element(tag1Readings, tag1Readings + TAG_BUFFER_SIZE);
+    if ((maxVal - minVal) <= CALIBRACAO_VARIACAO_MAX) {
+      float sum = 0;
+      for (int i = 0; i < TAG_BUFFER_SIZE; i++) sum += tag1Readings[i];
+      Kx = sum / TAG_BUFFER_SIZE;
+      KxCalculated = true;
+      SERIAL_LOG.println("🎯 Kx CALCULADO: " + String(Kx, 2));
+      if (KyCalculated && !jsonKxKyEnviado) enviarJSONCalibracao();
+    } else {
+      SERIAL_LOG.println("📉 TAG1 instável. Descartando lote.");
+    }
+    tag1Index = 0;
+  }
+}
+
+void processTag2(float range) {
+  if (KyCalculated) return;
+  tag2Readings[tag2Index++] = range;
+  if (tag2Index >= TAG_BUFFER_SIZE) {
+    float minVal = *std::min_element(tag2Readings, tag2Readings + TAG_BUFFER_SIZE);
+    float maxVal = *std::max_element(tag2Readings, tag2Readings + TAG_BUFFER_SIZE);
+    if ((maxVal - minVal) <= CALIBRACAO_VARIACAO_MAX) {
+      float sum = 0;
+      for (int i = 0; i < TAG_BUFFER_SIZE; i++) sum += tag2Readings[i];
+      Ky = sum / TAG_BUFFER_SIZE;
+      KyCalculated = true;
+      SERIAL_LOG.println("🎯 Ky CALCULADO: " + String(Ky, 2));
+      if (KxCalculated && !jsonKxKyEnviado) enviarJSONCalibracao();
+    } else {
+      SERIAL_LOG.println("📉 TAG2 instável. Descartando lote.");
+    }
+    tag2Index = 0;
+  }
+}
+
+void enviarJSONCalibracao() {
+  String json = "{\"kx\": " + String(Kx, 2) + ", \"ky\": " + String(Ky, 2) + "}";
+  SerialBT.println(json);
+  SERIAL_LOG.println("📤 JSON enviado via Bluetooth:");
+  SERIAL_LOG.println(json);
+  jsonKxKyEnviado = true;
+}
+
+String convertToJSON(String raw) {
+  int tidStart = raw.indexOf("tid:") + 4;
+  int tidEnd = raw.indexOf(",", tidStart);
+  String id = raw.substring(tidStart, tidEnd);
+  int rangeStart = raw.indexOf("range:(") + 7;
+  int rangeEnd = raw.indexOf(")", rangeStart);
+  String rangeValues = raw.substring(rangeStart, rangeEnd);
+  return "{\"id\":" + id + ",\"range\": [" + rangeValues + "]}";
+}
+
+String sendData(String command, const int timeout, boolean debug) {
+  String response = "";
+  SERIAL_LOG.println(command);
+  SERIAL_AT.println(command);
+  long int time = millis();
+  while ((time + timeout) > millis()) {
+    while (SERIAL_AT.available()) {
+      char c = SERIAL_AT.read();
+      response += c;
+    }
+  }
+  if (debug) SERIAL_LOG.println(response);
+  return response;
+}
+
+String config_cmd() {
+  return "AT+SETCFG=" + String(UWB_INDEX) + ",1,1,1";
+}
+
+String cap_cmd() {
+  return "AT+SETCAP=" + String(UWB_TAG_COUNT) + ",10,1";
+}
