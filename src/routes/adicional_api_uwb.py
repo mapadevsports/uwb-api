@@ -24,7 +24,9 @@ def receber_dados_uwb_batch():
         return jsonify({"erro": "Formato incorreto. Esperado um array de objetos JSON."}), 400
 
     # Buscar relatório ativo
-    relatorio_ativo = Relatorio.query.filter_by(fim_do_relatorio=None).order_by(Relatorio.inicio.desc()).first()
+    relatorio_ativo = Relatorio.query.filter_by(fim_do_relatorio=None).order_by(Relatorio.inicio_do_relatorio.desc()).first()
+    print(f"📝 Relatório ativo encontrado: id={relatorio_ativo.id}, inicio={relatorio_ativo.inicio_do_relatorio}")
+
     if not relatorio_ativo:
         print("❌ Nenhum relatório ativo encontrado.")
         return jsonify({"erro": "Nenhum relatório ativo encontrado."}), 404
