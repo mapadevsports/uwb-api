@@ -320,7 +320,7 @@ def receive_uwb_data():
         
         if not data:
             logging.error("[DEBUG] Nenhum dado JSON fornecido na requisição")
-            return jsonify({\'error\': \'Nenhum dado JSON fornecido\'}), 400
+            return jsonify({'error': 'Nenhum dado JSON fornecido'}), 400
         
         # Se for um array de objetos, processar cada um
         if isinstance(data, list):
@@ -333,35 +333,35 @@ def receive_uwb_data():
                     results.append(result)
                 except Exception as e:
                     logging.error(f"[DEBUG] Erro ao processar item do array: {item}. Erro: {e}")
-                    results.append({\'error\': f\'Erro ao processar item: {str(e)}\', \'item\': item})
+                    results.append({'error': f'Erro ao processar item: {str(e)}', 'item': item})
             
             # Retornar uma lista de resultados
-            return jsonify(results), 200 if all(\'success\' in r for r in results) else 207 # 207 Multi-Status
+            return jsonify(results), 200 if all('success' in r for r in results) else 207 # 207 Multi-Status
         
         # Se for um único objeto, processar normalmente
         else:
             logging.info(f"[DEBUG] Recebido um único objeto JSON.")
             result = process_single_uwb_data_item(data)
-            return jsonify(result), 201 if \'success\' in result else 400
+            return jsonify(result), 201 if 'success' in result else 400
             
     except ValueError as e:
         logging.error(f"[DEBUG] Erro de conversão de dados: {e}")
         db.session.rollback()
         return jsonify({
-            \'error\': f\'Erro de conversão de dados: {str(e)}\',
-            \'debug_info\': {
-                \'dados_recebidos\': str(raw_data),
-                \'content_type\': request.content_type
+            'error': f'Erro de conversão de dados: {str(e)}',
+            'debug_info': {
+                'dados_recebidos': str(raw_data),
+                'content_type': request.content_type
             }
         }), 400
     except Exception as e:
         logging.error(f"[DEBUG] Erro interno do servidor: {e}")
         db.session.rollback()
         return jsonify({
-            \'error\': f\'Erro interno do servidor: {str(e)}\',
-            \'debug_info\': {
-                \'dados_recebidos\': str(raw_data),
-                \'content_type\': request.content_type
+            'error': f'Erro interno do servidor: {str(e)}',
+            'debug_info': {
+                'dados_recebidos': str(raw_data),
+                'content_type': request.content_type
             }
         }), 500
 
@@ -371,16 +371,16 @@ def process_single_uwb_data_item(data):
     """
     try:
         # Validar campos obrigatórios
-        if \'id\' not in data:
-            logging.error("[DEBUG] Campo \'id\' não encontrado nos dados do item")
-            return {\'error\': \'Campo obrigatório: id\'}
+        if 'id' not in data:
+            logging.error("[DEBUG] Campo 'id' não encontrado nos dados do item")
+            return {'error': 'Campo obrigatório: id'}
             
-        if \'range\' not in data:
-            logging.error("[DEBUG] Campo \'range\' não encontrado nos dados do item")
-            return {\'error\': \'Campo obrigatório: range\'}
+        if 'range' not in data:
+            logging.error("[DEBUG] Campo 'range' não encontrado nos dados do item")
+            return {'error': 'Campo obrigatório: range'}
         
-        tag_id = str(data[\'id\'])
-        range_data = data[\'range\']
+        tag_id = str(data['id'])
+        range_data = data['range']
         
         logging.info(f"[DEBUG] Processando item - Tag ID: {tag_id}, Range data: {range_data} (tipo: {type(range_data)})")
         
@@ -389,12 +389,12 @@ def process_single_uwb_data_item(data):
         
         if range_values is None:
             logging.error(f"[DEBUG] Falha na validação do array range do item: {range_data}")
-            return {\'error\': \'Range deve ser um array válido (lista, JSON string ou CSV string)\'}
+            return {'error': 'Range deve ser um array válido (lista, JSON string ou CSV string)'}
         
         # Verificar se tem exatamente 8 valores
         if len(range_values) != 8:
             logging.error(f"[DEBUG] Array range do item tem {len(range_values)} elementos, esperado 8")
-            return {\'error\': f\'Range deve ter exatamente 8 valores, recebido {len(range_values)}\'}
+            return {'error': f'Range deve ter exatamente 8 valores, recebido {len(range_values)}'}
         
         logging.info(f"[DEBUG] Array range do item validado com sucesso: {range_values}")
         
@@ -403,23 +403,23 @@ def process_single_uwb_data_item(data):
             tag_id_int = int(tag_id)
             logging.info(f"[DEBUG] Tag ID do item convertido para inteiro: {tag_id_int}")
         except ValueError:
-            logging.error(f"[DEBUG] Erro ao converter tag_id \'{tag_id}\' do item para inteiro")
-            return {\'error\': f\'ID da tag deve ser um número válido, recebido: {tag_id}\'}
+            logging.error(f"[DEBUG] Erro ao converter tag_id '{tag_id}' do item para inteiro")
+            return {'error': f'ID da tag deve ser um número válido, recebido: {tag_id}'}
         
         if tag_id_int == 1 or tag_id_int == 2:
             logging.info(f"[DEBUG] TAG{tag_id_int} do item identificada como tag de calibração")
             return {
-                \'success\': True,
-                \'message\': f\'TAG{tag_id_int} recebida para calibração (não salva no banco)\',
-                \'tag_type\': \'calibracao\',
-                \'data\': {
-                    \'tag_number\': tag_id,
-                    \'range\': range_values
+                'success': True,
+                'message': f'TAG{tag_id_int} recebida para calibração (não salva no banco)',
+                'tag_type': 'calibracao',
+                'data': {
+                    'tag_number': tag_id,
+                    'range': range_values
                 },
-                \'debug_info\': {
-                    \'array_original\': range_data,
-                    \'array_processado\': range_values,
-                    \'tipo_original\': str(type(range_data))
+                'debug_info': {
+                    'array_original': range_data,
+                    'array_processado': range_values,
+                    'tipo_original': str(type(range_data))
                 }
             }
         
@@ -433,14 +433,14 @@ def process_single_uwb_data_item(data):
         if not relatorio_ativo:
             logging.warning(f"[DEBUG] Nenhum relatório ativo encontrado para TAG{tag_id_int} do item")
             return {
-                \'success\': False,
-                \'message\': \'Nenhum relatório ativo. Inicie um relatório para processar dados de tags.\',
-                \'tag_number\': tag_id,
-                \'relatorio_ativo\': False,
-                \'debug_info\': {
-                    \'array_original\': range_data,
-                    \'array_processado\': range_values,
-                    \'tipo_original\': str(type(range_data))
+                'success': False,
+                'message': 'Nenhum relatório ativo. Inicie um relatório para processar dados de tags.',
+                'tag_number': tag_id,
+                'relatorio_ativo': False,
+                'debug_info': {
+                    'array_original': range_data,
+                    'array_processado': range_values,
+                    'tipo_original': str(type(range_data))
                 }
             }
         
@@ -496,28 +496,28 @@ def process_single_uwb_data_item(data):
             logging.info(f"[DEBUG] Dados do item salvos com sucesso - Original ID: {uwb_data.id}, Processado ID: {uwb_data_processada.id}")
             
             return {
-                \'success\': True,
-                \'message\': \'Dados UWB processados com trilateração automática\',
-                \'data_original\': uwb_data.to_dict(),
-                \'data_processada\': uwb_data_processada.to_dict(),
-                \'posicao\': {
-                    \'x\': x,
-                    \'y\': y,
-                    \'unidade\': \'cm\',
-                    \'algoritmo\': \'trilateracao_minimos_quadrados\',
-                    \'coordenadas_ancoras\': {
-                        \'ancora_0\': \'(0, 0)\' if kx_relatorio else \'(0, 0)\,\n                        \'ancora_1\': f\'({kx_relatorio}, 0)\' if kx_relatorio else \'(114, 0)\,\n                        \'ancora_2\': f\'(0, {ky_relatorio})\' if ky_relatorio else \'(0, 114)\'
+                'success': True,
+                'message': 'Dados UWB processados com trilateração automática',
+                'data_original': uwb_data.to_dict(),
+                'data_processada': uwb_data_processada.to_dict(),
+                'posicao': {
+                    'x': x,
+                    'y': y,
+                    'unidade': 'cm',
+                    'algoritmo': 'trilateracao_minimos_quadrados',
+                    'coordenadas_ancoras': {
+                        'ancora_0': '(0, 0)' if kx_relatorio else '(0, 0)\,\n                        'ancora_1': f'({kx_relatorio}, 0)' if kx_relatorio else '(114, 0)\,\n                        'ancora_2': f'(0, {ky_relatorio})' if ky_relatorio else '(0, 114)'
                     }
                 },
-                \'relatorio_id\': relatorio_ativo.relatorio_number,
-                \'relatorio_ativo\': True,
-                \'debug_info\': {
-                    \'array_original\': range_data,
-                    \'array_processado\': range_values,
-                    \'tipo_original\': str(type(range_data)),
-                    \'kx_usado\': kx_relatorio,
-                    \'ky_usado\': ky_relatorio,
-                    \'num_ancoras_validas\': len([v for v in range_values if v is not None and v > 0])
+                'relatorio_id': relatorio_ativo.relatorio_number,
+                'relatorio_ativo': True,
+                'debug_info': {
+                    'array_original': range_data,
+                    'array_processado': range_values,
+                    'tipo_original': str(type(range_data)),
+                    'kx_usado': kx_relatorio,
+                    'ky_usado': ky_relatorio,
+                    'num_ancoras_validas': len([v for v in range_values if v is not None and v > 0])
                 }
             }
             
@@ -526,23 +526,23 @@ def process_single_uwb_data_item(data):
             db.session.commit()  # Commit apenas dos dados originais
             
             return {
-                \'success\': True,
-                \'message\': \'Dados UWB salvos (trilateração falhou)\',
-                \'data_original\': uwb_data.to_dict(),
-                \'processing_error\': str(processing_error),
-                \'relatorio_id\': relatorio_ativo.relatorio_number,
-                \'relatorio_ativo\': True,
-                \'debug_info\': {
-                    \'array_original\': range_data,
-                    \'array_processado\': range_values,
-                    \'tipo_original\': str(type(range_data)),
-                    \'erro_trilateracao\': str(processing_error)
+                'success': True,
+                'message': 'Dados UWB salvos (trilateração falhou)',
+                'data_original': uwb_data.to_dict(),
+                'processing_error': str(processing_error),
+                'relatorio_id': relatorio_ativo.relatorio_number,
+                'relatorio_ativo': True,
+                'debug_info': {
+                    'array_original': range_data,
+                    'array_processado': range_values,
+                    'tipo_original': str(type(range_data)),
+                    'erro_trilateracao': str(processing_error)
                 }
             }
         
     except Exception as e:
         logging.error(f"[DEBUG] Erro inesperado ao processar item: {e}")
-        return {\'error\': f\'Erro inesperado ao processar item: {str(e)}\'}
+        return {'error': f'Erro inesperado ao processar item: {str(e)}'}
 
 @uwb_bp.route('/uwb/data', methods=['GET'])
 def get_uwb_data():
