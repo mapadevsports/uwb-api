@@ -506,8 +506,11 @@ def process_single_uwb_data_item(data):
                     'unidade': 'cm',
                     'algoritmo': 'trilateracao_minimos_quadrados',
                     'coordenadas_ancoras': {
-                        'ancora_0': '(0, 0)' if kx_relatorio else '(0, 0)\,\n                        'ancora_1': f'({kx_relatorio}, 0)' if kx_relatorio else '(114, 0)\,\n                        'ancora_2': f'(0, {ky_relatorio})' if ky_relatorio else '(0, 114)'
-                    }
+                    'ancora_0': '(0, 0)', # Âncora 0 é sempre (0,0)
+                    'ancora_1': f'({kx_relatorio}, 0)' if kx_relatorio else '(114, 0)',
+                    'ancora_2': f'(0, {ky_relatorio})' if ky_relatorio else '(0, 114)'
+                }
+
                 },
                 'relatorio_id': relatorio_ativo.relatorio_number,
                 'relatorio_ativo': True,
