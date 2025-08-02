@@ -6,6 +6,9 @@ import numpy as np
 import math
 import logging
 import json
+# No topo do seu arquivo uwb_bp.py
+MOVIMENTO_MINIMO_CM = 5.0 
+
 
 uwb_bp = Blueprint('uwb', __name__)
 
@@ -470,7 +473,11 @@ def process_single_uwb_data_item(data):
             kx_relatorio = relatorio_ativo.kx if relatorio_ativo.kx else None
             ky_relatorio = relatorio_ativo.ky if relatorio_ativo.ky else None
             
-            x, y = trilateracao.processar_distancias(
+
+            # CÓDIGO NOVO PARA SUBSTITUIR (linhas ~450-480):
+
+            # 1. CALCULAR A NOVA POSIÇÃO
+            x_atual, y_atual = trilateracao.processar_distancias(
                 da0=uwb_data.da0,
                 da1=uwb_data.da1,
                 da2=uwb_data.da2,
@@ -482,48 +489,107 @@ def process_single_uwb_data_item(data):
                 kx=kx_relatorio,
                 ky=ky_relatorio
             )
-            
-            uwb_data_processada = UWBDataProcessada(
-                tag_number=tag_id,
-                x=x,
-                y=y,
-                criado_em=datetime.utcnow()
-            )
-            
-            db.session.add(uwb_data_processada)
-            db.session.commit()
-            
-            logging.info(f"[DEBUG] Dados do item salvos com sucesso - Original ID: {uwb_data.id}, Processado ID: {uwb_data_processada.id}")
-            
-            return {
-                'success': True,
-                'message': 'Dados UWB processados com trilateração automática',
-                'data_original': uwb_data.to_dict(),
-                'data_processada': uwb_data_processada.to_dict(),
-                'posicao': {
-                    'x': x,
-                    'y': y,
-                    'unidade': 'cm',
-                    'algoritmo': 'trilateracao_minimos_quadrados',
-                    'coordenadas_ancoras': {
-                    'ancora_0': '(0, 0)', # Âncora 0 é sempre (0,0)
-                    'ancora_1': f'({kx_relatorio}, 0)' if kx_relatorio else '(114, 0)',
-                    'ancora_2': f'(0, {ky_relatorio})' if ky_relatorio else '(0, 114)'
-                }
 
-                },
-                'relatorio_id': relatorio_ativo.relatorio_number,
-                'relatorio_ativo': True,
-                'debug_info': {
-                    'array_original': range_data,
-                    'array_processado': range_values,
-                    'tipo_original': str(type(range_data)),
-                    'kx_usado': kx_relatorio,
-                    'ky_usado': ky_relatorio,
-                    'num_ancoras_validas': len([v for v in range_values if v is not None and v > 0])
-                }
-            }
+            # =================================================================
+            # VALIDAÇÃO DE MOVIMENTO MÍNIMO
+            # =================================================================
             
+            # 2. BUSCAR A ÚLTIMA POSIÇÃO REGISTRADA PARA ESTA TAG
+            ultima_posicao = UWBDataProcessada.query.filter_by(tag_number=tag_id).order_by(UWBDataProcessada.criado_em.desc()).first()
+            
+            gravar_nova_posicao = True  # Assume que vamos gravar por padrão
+
+            if ultima_posicao:
+                # Se existe uma posição anterior, calcula a variação
+                variacao_x = abs(x_atual - ultima_posicao.x)
+                variacao_y = abs(y_atual - ultima_posicao.y)
+                
+                logging.info(f"[DEBUG] TAG {tag_id}: Posição Atual(x={x_atual}, y={y_atual}), Anterior(x={ultima_posicao.x}, y={ultima_posicao.y})")
+                logging.info(f"[DEBUG] TAG {tag_id}: Variação(Δx={variacao_x:.2f}, Δy={variacao_y:.2f}), Limite={MOVIMENTO_MINIMO_CM}")
+
+                # 3. APLICAR A CONDIÇÃO
+                # Se a variação em AMBOS os eixos for menor ou igual ao limite, não grava.
+                if variacao_x <= MOVIMENTO_MINIMO_CM and variacao_y <= MOVIMENTO_MINIMO_CM:
+                    gravar_nova_posicao = False
+            
+            # Se não houver posição anterior (primeiro dado da tag), a gravação é sempre feita.
+
+            # =================================================================
+            # GRAVAÇÃO CONDICIONAL
+            # =================================================================
+
+            if gravar_nova_posicao:
+                logging.info(f"[DEBUG] TAG {tag_id}: Movimento detectado. Gravando nova posição.")
+                
+                # Cria e salva o novo registro processado
+                uwb_data_processada = UWBDataProcessada(
+                    tag_number=tag_id,
+                    x=x_atual,
+                    y=y_atual,
+                    criado_em=datetime.utcnow()
+                )
+                
+                db.session.add(uwb_data_processada)
+                db.session.commit()
+                
+                logging.info(f"[DEBUG] Dados do item salvos com sucesso - Original ID: {uwb_data.id}, Processado ID: {uwb_data_processada.id}")
+                
+                return {
+                    'success': True,
+                    'message': 'Dados UWB processados e salvos com sucesso.',
+                    'data_original': uwb_data.to_dict(),
+                    'data_processada': uwb_data_processada.to_dict(),
+                    'posicao': {
+                        'x': x_atual,
+                        'y': y_atual,
+                        'unidade': 'cm',
+                        'algoritmo': 'trilateracao_minimos_quadrados',
+                        'coordenadas_ancoras': {
+                            'ancora_0': '(0, 0)',
+                            'ancora_1': f'({kx_relatorio}, 0)' if kx_relatorio else '(114, 0)',
+                            'ancora_2': f'(0, {ky_relatorio})' if ky_relatorio else '(0, 114)'
+                        }
+                    },
+                    'relatorio_id': relatorio_ativo.relatorio_number,
+                    'relatorio_ativo': True,
+                    'debug_info': {
+                        'array_original': range_data,
+                        'array_processado': range_values,
+                        'tipo_original': str(type(range_data)),
+                        'kx_usado': kx_relatorio,
+                        'ky_usado': ky_relatorio,
+                        'num_ancoras_validas': len([v for v in range_values if v is not None and v > 0]),
+                        'movimento_detectado': True,
+                        'limite_movimento': MOVIMENTO_MINIMO_CM
+                    }
+                }
+            else:
+                # Se a posição não mudou o suficiente, não grave e informe o motivo.
+                logging.info(f"[DEBUG] TAG {tag_id}: Movimento insignificante. Descartando gravação de dados processados.")
+                
+                # Importante: Faça o commit dos dados originais (UWBData) mesmo assim.
+                db.session.commit()
+
+                return {
+                    'success': True,
+                    'message': 'Dados UWB recebidos, mas a posição da tag não mudou significativamente.',
+                    'status': 'dados_descartados_sem_movimento',
+                    'tag_number': tag_id,
+                    'posicao_calculada': {'x': x_atual, 'y': y_atual},
+                    'relatorio_id': relatorio_ativo.relatorio_number,
+                    'relatorio_ativo': True,
+                    'debug_info': {
+                        'array_original': range_data,
+                        'array_processado': range_values,
+                        'tipo_original': str(type(range_data)),
+                        'kx_usado': kx_relatorio,
+                        'ky_usado': ky_relatorio,
+                        'num_ancoras_validas': len([v for v in range_values if v is not None and v > 0]),
+                        'motivo': 'Variação de posição menor que o limite definido.',
+                        'limite_movimento': MOVIMENTO_MINIMO_CM,
+                        'movimento_detectado': False
+                    }
+                }                     
         except Exception as processing_error:
             logging.error(f"[DEBUG] Erro na trilateração do item: {processing_error}")
             db.session.commit()  # Commit apenas dos dados originais
