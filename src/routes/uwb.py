@@ -6,10 +6,6 @@ import numpy as np
 import math
 import logging
 import json
-# === Controle de variação mínima por eixo (em centímetros) ===
-ERRO_MIN_EIXO_CM = 5.0
-ultimo_xy = {}  # Histórico da última posição por tag
-
 
 uwb_bp = Blueprint('uwb', __name__)
 
@@ -486,31 +482,6 @@ def process_single_uwb_data_item(data):
                 kx=kx_relatorio,
                 ky=ky_relatorio
             )
-            # Verificação de variação mínima em x e y
-global ultimo_xy
-if tag_id in ultimo_xy:
-    x_ant, y_ant = ultimo_xy[tag_id]
-    dx = abs(x - x_ant)
-    dy = abs(y - y_ant)
-
-    if dx < ERRO_MIN_EIXO_CM and dy < ERRO_MIN_EIXO_CM:
-        logging.info(f"[DEBUG] Dados descartados para tag {tag_id} - Δx: {dx:.1f}cm, Δy: {dy:.1f}cm abaixo do limite")
-        db.session.commit()  # Salva apenas os dados crus
-        return {
-            'success': True,
-            'message': 'Dados UWB salvos, mas não processados (movimento pequeno)',
-            'data_original': uwb_data.to_dict(),
-            'descartado_por_movimento': True,
-            'relatorio_id': relatorio_ativo.relatorio_number,
-            'debug_info': {
-                'dx': dx,
-                'dy': dy,
-                'limite_minimo_cm': ERRO_MIN_EIXO_CM
-            }
-        }
-
-# Atualiza histórico
-ultimo_xy[tag_id] = (x, y)
             
             uwb_data_processada = UWBDataProcessada(
                 tag_number=tag_id,
@@ -640,4 +611,3 @@ def test_uwb_endpoint():
             'error': f'Erro no teste: {str(e)}',
             'input': str(request.get_data())
         }), 500
-
