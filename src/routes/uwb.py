@@ -6,6 +6,10 @@ import numpy as np
 import math
 import logging
 import json
+# === Controle de variação mínima por eixo (em centímetros) ===
+ERRO_MIN_EIXO_CM = 5.0
+ultimo_xy = {}  # Histórico da última posição por tag
+
 
 uwb_bp = Blueprint('uwb', __name__)
 
