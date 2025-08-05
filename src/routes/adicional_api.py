@@ -47,10 +47,22 @@ def iniciar_ou_finalizar_kodular():
             return jsonify({"error": "Comando inválido no modo texto"}), 400
 
         # Se for JSON, deve conter kx e ky
-        data = request.get_json()
+    #    data = request.get_json()
+     #   kx = data.get("kx")
+      #  ky = data.get("ky")
+      #  nome_relatorio = data.get("nome") # Novo campo extraído
+      #  data = request.get_json()
+
+        if data is None:
+            logging.error("[Kodular] ❌ Erro: request.get_json() retornou None")
+            logging.error(f"📦 Body bruto recebido: {request.get_data(as_text=True)}")
+            logging.error(f"📎 Content-Type: {request.content_type}")
+            return jsonify({"error": "Corpo inválido ou não é JSON válido"}), 400
+        
         kx = data.get("kx")
         ky = data.get("ky")
-        nome_relatorio = data.get("nome") # Novo campo extraído
+        nome_relatorio = data.get("nome")
+
 
 
         if not kx or not ky:
@@ -96,5 +108,6 @@ def iniciar_ou_finalizar_kodular():
         db.session.rollback()
         logging.error(f"[Kodular] Erro: {e}")
         return jsonify({"error": f"Erro interno: {str(e)}"}), 500
+
 
 
