@@ -51,7 +51,7 @@ def iniciar_ou_finalizar_kodular():
      #   kx = data.get("kx")
       #  ky = data.get("ky")
       #  nome_relatorio = data.get("nome") # Novo campo extraído
-      #  data = request.get_json()
+        data = request.get_json()
 
         if data is None:
             logging.error("[Kodular] ❌ Erro: request.get_json() retornou None")
@@ -108,6 +108,7 @@ def iniciar_ou_finalizar_kodular():
         db.session.rollback()
         logging.error(f"[Kodular] Erro: {e}")
         return jsonify({"error": f"Erro interno: {str(e)}"}), 500
+
 
 
 
