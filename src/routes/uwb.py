@@ -518,22 +518,43 @@ def process_single_uwb_data_item(data):
             # GRAVAÇÃO CONDICIONAL
             # =================================================================
 
+            # =================================================================
+            # GRAVAÇÃO CONDICIONAL
+            # =================================================================
+
             if gravar_nova_posicao:
                 logging.info(f"[DEBUG] TAG {tag_id}: Movimento detectado. Gravando nova posição.")
-                
-                # Cria e salva o novo registro processado
+
+                # Calcular distância percorrida e tempo decorrido (se houver posição anterior)
+                distancia_percorrida = None
+                tempo_em_segundos = None
+
+                if ultima_posicao:
+                    dx = x_atual - ultima_posicao.x
+                    dy = y_atual - ultima_posicao.y
+                    distancia_percorrida = (dx**2 + dy**2)**0.5
+
+                    delta_tempo = datetime.utcnow() - ultima_posicao.criado_em
+                    tempo_em_segundos = delta_tempo.total_seconds()
+
+                    logging.info(f"[DEBUG] TAG {tag_id}: Distância percorrida = {distancia_percorrida:.3f} cm")
+                    logging.info(f"[DEBUG] TAG {tag_id}: Tempo decorrido = {tempo_em_segundos:.3f} s")
+
+                # Criar e salvar o novo registro processado
                 uwb_data_processada = UWBDataProcessada(
                     tag_number=tag_id,
                     x=x_atual,
                     y=y_atual,
-                    criado_em=datetime.utcnow()
+                    criado_em=datetime.utcnow(),
+                    distancia_percorrida=distancia_percorrida,
+                    tempo_em_segundos=tempo_em_segundos
                 )
-                
+
                 db.session.add(uwb_data_processada)
                 db.session.commit()
-                
+
                 logging.info(f"[DEBUG] Dados do item salvos com sucesso - Original ID: {uwb_data.id}, Processado ID: {uwb_data_processada.id}")
-                
+
                 return {
                     'success': True,
                     'message': 'Dados UWB processados e salvos com sucesso.',
@@ -548,7 +569,9 @@ def process_single_uwb_data_item(data):
                             'ancora_0': '(0, 0)',
                             'ancora_1': f'({kx_relatorio}, 0)' if kx_relatorio else '(114, 0)',
                             'ancora_2': f'(0, {ky_relatorio})' if ky_relatorio else '(0, 114)'
-                        }
+                        },
+                        'distancia_percorrida': distancia_percorrida,
+                        'tempo_em_segundos': tempo_em_segundos
                     },
                     'relatorio_id': relatorio_ativo.relatorio_number,
                     'relatorio_ativo': True,
@@ -560,7 +583,9 @@ def process_single_uwb_data_item(data):
                         'ky_usado': ky_relatorio,
                         'num_ancoras_validas': len([v for v in range_values if v is not None and v > 0]),
                         'movimento_detectado': True,
-                        'limite_movimento': MOVIMENTO_MINIMO_CM
+                        'limite_movimento': MOVIMENTO_MINIMO_CM,
+                        'distancia_percorrida': distancia_percorrida,
+                        'tempo_em_segundos': tempo_em_segundos
                     }
                 }
             else:
