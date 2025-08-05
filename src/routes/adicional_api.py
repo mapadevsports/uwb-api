@@ -50,8 +50,6 @@ def iniciar_ou_finalizar_kodular():
         data = request.get_json()
         kx = data.get("kx")
         ky = data.get("ky")
-        nome_relatorio = data.get("nome") # Novo campo extraído
-
 
         if not kx or not ky:
             return jsonify({
@@ -76,8 +74,7 @@ def iniciar_ou_finalizar_kodular():
         novo_relatorio = Relatorio(
             inicio_do_relatorio=datetime.utcnow(),
             kx=str(kx),
-            ky=str(ky),
-            nome=str(nome_relatorio)
+            ky=str(ky)
         )
 
         db.session.add(novo_relatorio)
@@ -96,6 +93,3 @@ def iniciar_ou_finalizar_kodular():
         db.session.rollback()
         logging.error(f"[Kodular] Erro: {e}")
         return jsonify({"error": f"Erro interno: {str(e)}"}), 500
-
-
-
