@@ -48,6 +48,9 @@ class UWBDataProcessada(db.Model):
     x = db.Column(db.Float, nullable=True)  # Coordenada X (resultado da trilateração)
     y = db.Column(db.Float, nullable=True)  # Coordenada Y (resultado da trilateração)
     criado_em = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    distancia_percorrida = db.Column(db.Float, nullable=True)
+    tempo_em_segundos = db.Column(db.Float, nullable=True)
+
 
     def __repr__(self):
         return f'<UWBDataProcessada tag={self.tag_number} x={self.x} y={self.y}>'
