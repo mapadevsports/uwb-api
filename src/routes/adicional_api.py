@@ -77,8 +77,7 @@ def iniciar_ou_finalizar_kodular():
             inicio_do_relatorio=datetime.utcnow(),
             kx=str(kx),
             ky=str(ky)
-            nome_relatorio = data.get("nome") # Você já adicionou esta linha, perfeito.
-
+            nome=str(nome_relatorio)
         )
 
         db.session.add(novo_relatorio)
@@ -97,4 +96,5 @@ def iniciar_ou_finalizar_kodular():
         db.session.rollback()
         logging.error(f"[Kodular] Erro: {e}")
         return jsonify({"error": f"Erro interno: {str(e)}"}), 500
+
 
