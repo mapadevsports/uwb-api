@@ -9,6 +9,7 @@ class Relatorio(db.Model):
     fim_do_relatorio = db.Column(db.DateTime, nullable=True)
     kx = db.Column(db.String, nullable=True)  # Valor Kx para trilateração
     ky = db.Column(db.String, nullable=True)  # Valor Ky para trilateração
+    nome = db.Column(db.String(100), nullable=True)
     # Removendo colunas que não existem na tabela real
     # status = db.Column(db.String(20), default='inativo', nullable=False)
     # criado_em = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
