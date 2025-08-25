@@ -416,18 +416,16 @@ def receive_uwb_data():
         }), 500
 
 @uwb_bp.route('/uwb/data-rssi', methods=['POST'])
+@uwb_bp.route('/uwb/data-rssi', methods=['POST'])
 def receive_uwb_data_rssi():
     """
-    Novo endpoint para receber leituras (range + rssi) e salvar em distancias_uwb_rssi.
-    Aceita objeto único ou lista de objetos.
+    Aceita dois formatos:
+      1) CABEÇALHO: {"nome": "..."}  ou {"relatorio_nome": "..."} (+ opcional "timestamp")
+         -> grava uma linha com tag_number = nome e todas as outras colunas NULL.
+      2) DADOS: {"id": 7, "range": [...], "rssi": [...], "timestamp": "..."}
+         -> grava distâncias e RSSIs normalmente.
 
-    Formato de cada item:
-    {
-      "id": 7,
-      "range": [123.4, 234.5, ...],   # até 8 valores (cm)
-      "rssi":  [-67.0, -72.3, ...],   # até 8 valores (dBm)
-      "timestamp": "2025-08-24T23:14:15Z"  # opcional
-    }
+    Aceita objeto único ou lista.
     """
     try:
         payload = request.get_json(silent=True)
@@ -436,11 +434,37 @@ def receive_uwb_data_rssi():
 
         items = payload if isinstance(payload, list) else [payload]
 
-        saved_ids = []
-        errors = []
+        saved_ids, errors = [], []
 
         for idx, item in enumerate(items):
             try:
+                # ---------- Timestamp (opcional) ----------
+                criado_em = None
+                ts_raw = item.get('timestamp')
+                if ts_raw:
+                    try:
+                        ts = ts_raw.replace('Z', '+00:00') if isinstance(ts_raw, str) else ts_raw
+                        criado_em = datetime.fromisoformat(ts)  # manteremos como está
+                    except Exception:
+                        logging.warning("timestamp inválido em item %s: %s", idx, ts_raw)
+                        criado_em = None
+
+                # ---------- 1) Modo CABEÇALHO ----------
+                nome_rel = item.get('relatorio_nome') or item.get('nome') or item.get('nome_relatorio')
+                if nome_rel:
+                    nome_rel = str(nome_rel)[:50]  # cabe em VARCHAR(50)
+                    rec = UWBDataRSSI(
+                        tag_number=nome_rel,
+                        da0=None, da1=None, da2=None, da3=None, da4=None, da5=None, da6=None, da7=None,
+                        rssi0=None, rssi1=None, rssi2=None, rssi3=None, rssi4=None, rssi5=None, rssi6=None, rssi7=None,
+                        criado_em=criado_em
+                    )
+                    db.session.add(rec)
+                    db.session.flush()
+                    saved_ids.append(rec.id)
+                    continue  # próximo item
+
+                # ---------- 2) Modo DADOS (validações) ----------
                 if 'id' not in item:
                     raise ValueError("Campo obrigatório ausente: 'id'")
                 if 'range' not in item:
@@ -460,28 +484,16 @@ def receive_uwb_data_rssi():
                 ranges8 = _pad_or_trim_eight(ranges)
                 rssi8 = _pad_or_trim_eight(rssi)
 
-                # timestamp opcional
-                criado_em = None
-                ts_raw = item.get('timestamp')
-                if ts_raw:
-                    try:
-                        ts = ts_raw.replace('Z', '+00:00') if isinstance(ts_raw, str) else ts_raw
-                        criado_em = datetime.fromisoformat(ts)
-                    except Exception:
-                        logging.warning("timestamp inválido em item %s: %s", idx, ts_raw)
-                        criado_em = None
-
                 rec = UWBDataRSSI(
                     tag_number=tag_id,
                     da0=ranges8[0], da1=ranges8[1], da2=ranges8[2], da3=ranges8[3],
                     da4=ranges8[4], da5=ranges8[5], da6=ranges8[6], da7=ranges8[7],
                     rssi0=rssi8[0], rssi1=rssi8[1], rssi2=rssi8[2], rssi3=rssi8[3],
                     rssi4=rssi8[4], rssi5=rssi8[5], rssi6=rssi8[6], rssi7=rssi8[7],
-                    criado_em=criado_em  # se None, usa default
+                    criado_em=criado_em
                 )
                 db.session.add(rec)
-                db.session.flush()  # para pegar rec.id
-
+                db.session.flush()
                 saved_ids.append(rec.id)
 
             except Exception as e:
