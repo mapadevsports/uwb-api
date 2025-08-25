@@ -2,6 +2,7 @@ from flask import Blueprint, jsonify, request
 from src.models.uwb_data import UWBData, UWBDataProcessada, db
 from src.models.relatorio import Relatorio
 from datetime import datetime
+from src.models.uwb_rssi import UWBDataRSSI
 import numpy as np
 import math
 import logging
@@ -303,6 +304,52 @@ def validar_e_converter_array(range_data, campo_nome="range"):
         logging.error(f"[DEBUG] Erro geral na validação do array {campo_nome}: {e}")
         return None
 
+def _to_float_list(value):
+    """
+    Converte listas/tuplas/strings numéricas para list[float] (ou None).
+    Aceita lista Python, string CSV, ou string JSON de lista.
+    """
+    if value is None:
+        return None
+    if isinstance(value, (list, tuple)):
+        out = []
+        for v in value:
+            if v is None or v == "":
+                out.append(None)
+            else:
+                out.append(float(v))
+        return out
+    if isinstance(value, str):
+        # tenta JSON de lista
+        try:
+            import json as _json
+            parsed = _json.loads(value)
+            if isinstance(parsed, list):
+                return _to_float_list(parsed)
+        except Exception:
+            pass
+        # tenta CSV
+        parts = [p.strip() for p in value.split(",")]
+        out = []
+        for p in parts:
+            if p == "" or p.lower() == "null":
+                out.append(None)
+            else:
+                out.append(float(p))
+        return out
+    # valor único
+    try:
+        return [float(value)]
+    except Exception as e:
+        raise ValueError(f"Não foi possível converter '{value}' em lista de float: {e}")
+
+def _pad_or_trim_eight(xs):
+    """ Garante exatamente 8 posições (completa com None ou corta). """
+    xs = list(xs or [])
+    if len(xs) < 8:
+        xs = xs + [None] * (8 - len(xs))
+    return xs[:8]
+
 @uwb_bp.route("/uwb/data", methods=["POST"])
 def receive_uwb_data():
     """
@@ -367,6 +414,92 @@ def receive_uwb_data():
                 'content_type': request.content_type
             }
         }), 500
+
+@uwb_bp.route('/uwb/data-rssi', methods=['POST'])
+def receive_uwb_data_rssi():
+    """
+    Novo endpoint para receber leituras (range + rssi) e salvar em distancias_uwb_rssi.
+    Aceita objeto único ou lista de objetos.
+
+    Formato de cada item:
+    {
+      "id": 7,
+      "range": [123.4, 234.5, ...],   # até 8 valores (cm)
+      "rssi":  [-67.0, -72.3, ...],   # até 8 valores (dBm)
+      "timestamp": "2025-08-24T23:14:15Z"  # opcional
+    }
+    """
+    try:
+        payload = request.get_json(silent=True)
+        if payload is None:
+            return jsonify({"error": "JSON inválido ou ausente."}), 400
+
+        items = payload if isinstance(payload, list) else [payload]
+
+        saved_ids = []
+        errors = []
+
+        for idx, item in enumerate(items):
+            try:
+                if 'id' not in item:
+                    raise ValueError("Campo obrigatório ausente: 'id'")
+                if 'range' not in item:
+                    raise ValueError("Campo obrigatório ausente: 'range'")
+                if 'rssi' not in item:
+                    raise ValueError("Campo obrigatório ausente: 'rssi'")
+
+                tag_id = str(item['id'])
+                ranges = _to_float_list(item.get('range'))
+                rssi = _to_float_list(item.get('rssi'))
+
+                if not ranges:
+                    raise ValueError("'range' vazio.")
+                if not rssi:
+                    raise ValueError("'rssi' vazio.")
+
+                ranges8 = _pad_or_trim_eight(ranges)
+                rssi8 = _pad_or_trim_eight(rssi)
+
+                # timestamp opcional
+                criado_em = None
+                ts_raw = item.get('timestamp')
+                if ts_raw:
+                    try:
+                        ts = ts_raw.replace('Z', '+00:00') if isinstance(ts_raw, str) else ts_raw
+                        criado_em = datetime.fromisoformat(ts)
+                    except Exception:
+                        logging.warning("timestamp inválido em item %s: %s", idx, ts_raw)
+                        criado_em = None
+
+                rec = UWBDataRSSI(
+                    tag_number=tag_id,
+                    da0=ranges8[0], da1=ranges8[1], da2=ranges8[2], da3=ranges8[3],
+                    da4=ranges8[4], da5=ranges8[5], da6=ranges8[6], da7=ranges8[7],
+                    rssi0=rssi8[0], rssi1=rssi8[1], rssi2=rssi8[2], rssi3=rssi8[3],
+                    rssi4=rssi8[4], rssi5=rssi8[5], rssi6=rssi8[6], rssi7=rssi8[7],
+                    criado_em=criado_em  # se None, usa default
+                )
+                db.session.add(rec)
+                db.session.flush()  # para pegar rec.id
+
+                saved_ids.append(rec.id)
+
+            except Exception as e:
+                logging.exception("Falha ao processar item %s: %s", idx, item)
+                errors.append({"index": idx, "error": str(e)})
+
+        if saved_ids:
+            db.session.commit()
+        else:
+            db.session.rollback()
+
+        status = 201 if saved_ids and not errors else (207 if saved_ids and errors else 400)
+        return jsonify({"saved": len(saved_ids), "ids": saved_ids, "errors": errors}), status
+
+    except Exception as e:
+        logging.exception("Erro inesperado em /uwb/data-rssi: %s", e)
+        db.session.rollback()
+        return jsonify({"error": str(e)}), 500
 
 def process_single_uwb_data_item(data):
     """
